@@ -1,0 +1,1 @@
+CREATE SEQUENCE receipt_number_seq START WITH 1001;

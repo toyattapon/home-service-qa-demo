@@ -1,4 +1,6 @@
 import {
+  useCallback,
+  useEffect,
   useMemo,
   useState,
   type PropsWithChildren,
@@ -6,6 +8,7 @@ import {
 import type { SessionUser } from '../../shared/domain';
 import {
   apiRequest,
+  setUnauthorizedHandler,
   TOKEN_KEY,
   USER_KEY,
 } from '../api/client';
@@ -16,28 +19,65 @@ interface LoginResponse {
   user: SessionUser;
 }
 
-function readStoredUser(): SessionUser | null {
+interface AuthSession {
+  token: string;
+  user: SessionUser;
+}
+
+function clearStoredSession() {
+  localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(TOKEN_KEY);
+}
+
+function isSessionUser(value: unknown): value is SessionUser {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<SessionUser>;
+  return (
+    typeof candidate.id === 'string' &&
+    typeof candidate.name === 'string' &&
+    typeof candidate.email === 'string' &&
+    (candidate.role === 'admin' || candidate.role === 'technician') &&
+    (candidate.role === 'admin' ||
+      typeof candidate.technicianId === 'string')
+  );
+}
+
+function readStoredSession(): AuthSession | null {
+  const token = localStorage.getItem(TOKEN_KEY);
   const value = localStorage.getItem(USER_KEY);
-  if (!value) return null;
+  if (!token || !value) {
+    clearStoredSession();
+    return null;
+  }
   try {
-    return JSON.parse(value) as SessionUser;
+    const user: unknown = JSON.parse(value);
+    if (!isSessionUser(user)) throw new Error('Invalid stored user');
+    const expectedToken =
+      user.role === 'admin'
+        ? 'mock-token-admin'
+        : 'mock-token-technician';
+    if (token !== expectedToken) throw new Error('Mismatched session');
+    return { token, user };
   } catch {
-    localStorage.removeItem(USER_KEY);
-    localStorage.removeItem(TOKEN_KEY);
+    clearStoredSession();
     return null;
   }
 }
 
 export function AuthProvider({ children }: PropsWithChildren) {
-  const [user, setUser] = useState<SessionUser | null>(readStoredUser);
-  const [token, setToken] = useState<string | null>(() =>
-    localStorage.getItem(TOKEN_KEY),
-  );
+  const [session, setSession] = useState<AuthSession | null>(readStoredSession);
+
+  const logout = useCallback(() => {
+    clearStoredSession();
+    setSession(null);
+  }, []);
+
+  useEffect(() => setUnauthorizedHandler(logout), [logout]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
-      user,
-      token,
+      user: session?.user ?? null,
+      token: session?.token ?? null,
       async login(email, password) {
         const result = await apiRequest<LoginResponse>('/auth/login', {
           method: 'POST',
@@ -45,18 +85,12 @@ export function AuthProvider({ children }: PropsWithChildren) {
         });
         localStorage.setItem(TOKEN_KEY, result.token);
         localStorage.setItem(USER_KEY, JSON.stringify(result.user));
-        setToken(result.token);
-        setUser(result.user);
+        setSession(result);
         return result.user;
       },
-      logout() {
-        localStorage.removeItem(TOKEN_KEY);
-        localStorage.removeItem(USER_KEY);
-        setToken(null);
-        setUser(null);
-      },
+      logout,
     }),
-    [token, user],
+    [logout, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

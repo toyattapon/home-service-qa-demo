@@ -3,8 +3,8 @@ import type { UserRole } from '../../shared/domain';
 import { useAuth } from './useAuth';
 
 export function RoleGuard({ role }: { role: UserRole }) {
-  const { user } = useAuth();
-  if (!user) return <Navigate to="/login" replace />;
+  const { token, user } = useAuth();
+  if (!token || !user) return <Navigate to="/login" replace />;
   if (user.role !== role) {
     return (
       <Navigate

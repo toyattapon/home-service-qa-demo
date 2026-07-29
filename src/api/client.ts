@@ -6,6 +6,15 @@ export const USER_KEY = 'home-service-qa.user.v1';
 const baseUrl =
   import.meta.env.VITE_API_BASE_URL ?? 'http://localhost:4000/api';
 
+let unauthorizedHandler: (() => void) | undefined;
+
+export function setUnauthorizedHandler(handler?: () => void) {
+  unauthorizedHandler = handler;
+  return () => {
+    if (unauthorizedHandler === handler) unauthorizedHandler = undefined;
+  };
+}
+
 export class ApiClientError extends Error {
   constructor(
     message: string,
@@ -42,6 +51,7 @@ export async function apiRequest<T>(
     if (response.status === 401 && path !== '/auth/login') {
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
+      unauthorizedHandler?.();
     }
     throw new ApiClientError(
       failure.message,

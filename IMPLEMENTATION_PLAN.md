@@ -271,7 +271,7 @@ Final verification evidence:
 npm run db:reset    -> passed
 npm run lint        -> passed with no errors or warnings
 npm run typecheck   -> passed
-npm run test:dev    -> 5 files, 47 tests passed
+npm run test:dev    -> 7 files, 50 tests passed
 npm run build       -> passed
 ```
 
@@ -280,6 +280,10 @@ routes, owned-job access, dispatch success and conflict behavior, start job,
 used parts, transactional completion, stock deduction, invoice calculation,
 payment, receipt generation, and a 390 px viewport without page-level horizontal
 overflow. The database was reset again after the state-changing walkthrough.
+
+The developer suite includes concurrency regressions for used-parts replacement
+versus completion and start versus cancellation, plus receipt-sequence reset
+determinism. Shared-database test files run serially to keep reset isolation.
 
 Remaining learner-owned work is unchanged: QA test documents, Playwright/API
 automation, SQL test scripts, load-test scripts, CI/CD, and optional hosting.

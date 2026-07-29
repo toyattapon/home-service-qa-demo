@@ -138,14 +138,25 @@ export async function replaceUsedParts(
     throw new AppError(403, 'FORBIDDEN', 'Technician access required');
   }
   return withTransaction(async (client) => {
-    const job = await findJobById(jobId, client);
-    if (!job) {
+    const lockResult = await client.query(
+      `SELECT id FROM jobs WHERE id = $1 FOR UPDATE`,
+      [jobId],
+    );
+    if (!lockResult.rowCount) {
       throw new AppError(404, 'NOT_FOUND', 'Job not found');
     }
-    if (job.technicianId !== actor.technicianId) {
+    const result = await client.query<{
+      status: JobStatus;
+      technician_id: string | null;
+    }>(
+      `SELECT status, technician_id FROM jobs WHERE id = $1`,
+      [jobId],
+    );
+    const lockedJob = result.rows[0];
+    if (lockedJob.technician_id !== actor.technicianId) {
       throw new AppError(403, 'FORBIDDEN', 'You cannot access this job');
     }
-    if (job.status !== 'In Progress') {
+    if (lockedJob.status !== 'In Progress') {
       throw new AppError(
         400,
         'INVALID_STATUS_TRANSITION',
@@ -190,15 +201,6 @@ export async function updateJobStatus(
   nextStatus: JobStatus,
   actor: SessionUser,
 ): Promise<{ job: Job; invoice?: Invoice }> {
-  const job = await getJobForActor(jobId, actor);
-  if (!canTransitionJobStatus(job.status, nextStatus)) {
-    throw new AppError(
-      400,
-      'INVALID_STATUS_TRANSITION',
-      'Invalid job status transition',
-    );
-  }
-
   const adminCancellation =
     actor.role === 'admin' && nextStatus === 'Cancelled';
   const technicianStart =
@@ -215,13 +217,46 @@ export async function updateJobStatus(
   }
 
   if (technicianComplete) {
-    const result = await completeJob(jobId, actor.technicianId!);
+    if (!actor.technicianId) {
+      throw new AppError(403, 'FORBIDDEN', 'Technician access required');
+    }
+    const result = await completeJob(jobId, actor.technicianId);
     return result;
   }
 
-  await pool.query(
-    'UPDATE jobs SET status = $2, updated_at = now() WHERE id = $1',
-    [jobId, nextStatus],
-  );
-  return { job: (await findJobById(jobId))! };
+  return withTransaction(async (client) => {
+    const result = await client.query<{
+      status: JobStatus;
+      technician_id: string | null;
+    }>(
+      `SELECT status, technician_id
+       FROM jobs
+       WHERE id = $1
+       FOR UPDATE`,
+      [jobId],
+    );
+    const lockedJob = result.rows[0];
+    if (!lockedJob) {
+      throw new AppError(404, 'NOT_FOUND', 'Job not found');
+    }
+    if (
+      actor.role === 'technician' &&
+      (!actor.technicianId ||
+        lockedJob.technician_id !== actor.technicianId)
+    ) {
+      throw new AppError(403, 'FORBIDDEN', 'You cannot access this job');
+    }
+    if (!canTransitionJobStatus(lockedJob.status, nextStatus)) {
+      throw new AppError(
+        400,
+        'INVALID_STATUS_TRANSITION',
+        'Invalid job status transition',
+      );
+    }
+    await client.query(
+      'UPDATE jobs SET status = $2, updated_at = now() WHERE id = $1',
+      [jobId, nextStatus],
+    );
+    return { job: (await findJobById(jobId, client))! };
+  });
 }

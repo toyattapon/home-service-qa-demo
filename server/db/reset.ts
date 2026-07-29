@@ -90,6 +90,7 @@ export async function resetDatabase(): Promise<void> {
         users
       RESTART IDENTITY CASCADE
     `);
+    await client.query('ALTER SEQUENCE receipt_number_seq RESTART WITH 1001');
     await insertSeedData(client);
   });
 }

@@ -24,6 +24,23 @@
   gap: 11px;
 }
 
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.sidebar-menu-toggle {
+  display: none;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 9px;
+  padding: 8px 11px;
+  color: white;
+  background: rgb(255 255 255 / 8%);
+  cursor: pointer;
+}
+
 .brand-mark {
   display: grid;
   width: 42px;
@@ -340,10 +357,20 @@
 
 .receipt {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   border-radius: 10px;
   padding: 14px;
   background: #e9f8f2;
+}
+
+.receipt > span:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.receipt small {
+  color: var(--slate-600);
 }
 
 .invoice-actions {
@@ -365,11 +392,19 @@
   }
 
   .sidebar nav {
-    display: flex;
+    display: none;
     min-width: 0;
     max-width: 100%;
     overflow-x: auto;
     margin-top: 20px;
+  }
+
+  .sidebar nav.open {
+    display: flex;
+  }
+
+  .sidebar-menu-toggle {
+    display: inline-flex;
   }
 
   .sidebar-user {

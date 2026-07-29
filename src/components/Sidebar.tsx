@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { NavLink } from 'react-router-dom';
 import { useAuth } from '../auth/useAuth';
 
@@ -14,23 +15,41 @@ const technicianLinks = [['/tech/jobs', 'My jobs']] as const;
 
 export function Sidebar() {
   const { user, logout } = useAuth();
+  const [menuOpen, setMenuOpen] = useState(false);
   const links = user?.role === 'admin' ? adminLinks : technicianLinks;
 
   return (
     <aside className="sidebar">
-      <div className="brand">
-        <span className="brand-mark">HS</span>
-        <span>
-          <strong>Home Service</strong>
-          <small>QA Demo</small>
-        </span>
+      <div className="sidebar-header">
+        <div className="brand">
+          <span className="brand-mark">HS</span>
+          <span>
+            <strong>Home Service</strong>
+            <small>QA Demo</small>
+          </span>
+        </div>
+        <button
+          type="button"
+          className="sidebar-menu-toggle"
+          data-testid="sidebar-menu-toggle"
+          aria-expanded={menuOpen}
+          aria-controls="primary-navigation"
+          onClick={() => setMenuOpen((current) => !current)}
+        >
+          Menu
+        </button>
       </div>
-      <nav aria-label="Primary navigation">
+      <nav
+        id="primary-navigation"
+        aria-label="Primary navigation"
+        className={menuOpen ? 'open' : undefined}
+      >
         {links.map(([to, label]) => (
           <NavLink
             key={to}
             to={to}
             className={({ isActive }) => (isActive ? 'active' : undefined)}
+            onClick={() => setMenuOpen(false)}
           >
             {label}
           </NavLink>

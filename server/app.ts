@@ -51,7 +51,6 @@ app.use('/api/jobs', authenticate, jobRoutes);
 app.use(
   '/api/inventory',
   authenticate,
-  requireRole('admin'),
   inventoryRoutes,
 );
 app.use(

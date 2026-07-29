@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
+import { requireRole } from '../../middleware/requireRole';
 import { adjustInventory, listInventory } from './inventoryRepository';
 
 const adjustmentSchema = z
@@ -15,11 +16,11 @@ inventoryRoutes.get('/', async (_request, response) => {
   response.json({ data: await listInventory() });
 });
 
-inventoryRoutes.patch('/:id/adjust', async (request, response) => {
+inventoryRoutes.patch('/:id/adjust', requireRole('admin'), async (request, response) => {
   const input = adjustmentSchema.parse(request.body);
   response.json({
     data: await adjustInventory(
-      request.params.id,
+      String(request.params.id),
       input.type,
       input.quantity,
     ),

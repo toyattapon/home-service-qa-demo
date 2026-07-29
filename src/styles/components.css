@@ -1,0 +1,276 @@
+.button {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 9px 15px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.button.primary {
+  color: white;
+  background: var(--blue-600);
+  box-shadow: 0 8px 20px rgb(23 105 224 / 20%);
+}
+
+.button.secondary {
+  border-color: var(--slate-200);
+  color: var(--navy-700);
+  background: white;
+}
+
+.button.danger {
+  color: white;
+  background: var(--red-600);
+}
+
+.button.wide {
+  width: 100%;
+}
+
+.link-button {
+  border: 0;
+  color: #bad0ee;
+  background: transparent;
+  cursor: pointer;
+}
+
+.feedback {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 10px;
+  padding: 11px 13px;
+  font-size: 0.92rem;
+}
+
+.feedback-error {
+  color: #922d3a;
+  background: #fff0f2;
+}
+
+.feedback-success {
+  color: #0f6849;
+  background: #e9f8f2;
+}
+
+.feedback-info {
+  color: #245790;
+  background: #eaf3ff;
+}
+
+.feedback button {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.status-badge {
+  display: inline-flex;
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: #526077;
+  background: var(--slate-100);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.status-pending,
+.status-unpaid {
+  color: #93600d;
+  background: #fff3d9;
+}
+
+.status-assigned {
+  color: #205ea5;
+  background: #e8f2ff;
+}
+
+.status-in-progress {
+  color: #116b63;
+  background: #e2f7f3;
+}
+
+.status-completed,
+.status-paid {
+  color: #176844;
+  background: #e4f5ec;
+}
+
+.status-cancelled {
+  color: #8c3741;
+  background: #fdebed;
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+
+.page-header p {
+  margin-bottom: 0;
+}
+
+.page-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.eyebrow {
+  margin-bottom: 6px;
+  color: var(--blue-600);
+  font-size: 0.75rem;
+  font-weight: 850;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.panel {
+  border: 1px solid var(--slate-200);
+  border-radius: var(--radius-md);
+  background: white;
+  box-shadow: var(--shadow-sm);
+}
+
+.panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--slate-100);
+  padding: 18px 20px;
+}
+
+.panel-header h2,
+.panel-header p {
+  margin: 0;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--slate-100);
+  padding: 14px 18px;
+  text-align: left;
+  vertical-align: middle;
+}
+
+th {
+  color: var(--slate-600);
+  background: var(--slate-50);
+  font-size: 0.74rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+tbody tr:hover {
+  background: #fafcff;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+label {
+  display: grid;
+  gap: 7px;
+  color: var(--navy-700);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+label.full,
+.form-actions,
+.form-message {
+  grid-column: 1 / -1;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--slate-200);
+  border-radius: 9px;
+  padding: 10px 12px;
+  color: var(--navy-950);
+  background: white;
+}
+
+textarea {
+  min-height: 110px;
+  resize: vertical;
+}
+
+.field-error {
+  color: var(--red-600);
+  font-size: 0.78rem;
+}
+
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  border-top: 1px solid var(--slate-100);
+  margin-top: 4px;
+  padding-top: 18px;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  padding: 16px 20px;
+}
+
+.toolbar label {
+  min-width: 180px;
+  flex: 1;
+}
+
+.dialog-backdrop {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgb(8 19 38 / 56%);
+}
+
+.confirm-dialog {
+  width: min(440px, 100%);
+  border-radius: var(--radius-lg);
+  padding: 26px;
+  background: white;
+  box-shadow: var(--shadow-lg);
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}

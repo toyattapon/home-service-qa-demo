@@ -4216,3 +4216,1024 @@ The goal is:
 ```text
 Build a realistic, testable, well-documented QA demo.
 ```
+
+---
+
+# Portfolio Core SUT Implementation Execution Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use
+> `superpowers:subagent-driven-development` (recommended) or
+> `superpowers:executing-plans` to implement this plan task-by-task. Steps use
+> checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Build the approved PostgreSQL-backed Home Service System Under Test
+without prebuilding the QA learner's automation, load-test, or CI/CD assets.
+
+**Architecture:** A Vite React frontend calls an Express JSON API. The API owns
+authorization and business rules and persists data in PostgreSQL. Critical
+domain rules are pure functions; completing a job is a database transaction.
+
+**Tech Stack:** Node.js 20+, npm, React, TypeScript, Vite, React Router, Express,
+PostgreSQL, `pg`, Docker Compose, Vitest, ESLint, and plain CSS.
+
+## Global Constraints
+
+- UI labels, validation text, and API errors are English.
+- Application date behavior uses `Asia/Bangkok`; money is THB.
+- API success and error bodies follow the approved response envelopes.
+- All mutable input is validated by the API.
+- Every protected API enforces mock bearer authentication and role ownership.
+- PostgreSQL owns relational integrity; transactional completion is atomic.
+- Important UI controls and results have stable `data-testid` values.
+- QA automation, SQL test scripts, load scripts, and CI/CD remain learner-owned.
+- Committed developer tests cover domain rules and the completion transaction
+  only; CRUD/UI verification remains manual to preserve the learning boundary.
+- Keep documentation in this `IMPLEMENTATION_PLAN.md` and `README.md` only.
+- Work on a feature branch or isolated worktree, never directly on `main`.
+
+## File Responsibility Map
+
+| Path | Responsibility |
+|---|---|
+| `shared/domain.ts` | Shared domain unions and API-safe entity types |
+| `shared/api.ts` | Success/error envelope types |
+| `server/config.ts` | Validated environment configuration |
+| `server/app.ts` | Express composition without binding a port |
+| `server/index.ts` | Process startup and graceful shutdown |
+| `server/db/*` | Pool, migration, seed, reset, and transaction helpers |
+| `server/middleware/*` | Authentication, authorization, errors, logging |
+| `server/domain/*` | Pure transition, schedule, inventory, and pricing rules |
+| `server/features/*` | Feature repositories, services, and thin routes |
+| `src/api/client.ts` | Fetch wrapper, envelope parsing, and bearer token |
+| `src/auth/*` | Session state and role-aware route guards |
+| `src/components/*` | Reusable layout, feedback, badge, and dialog components |
+| `src/features/*` | Focused route pages and feature API adapters |
+| `src/styles/*` | Tokens, base rules, components, and page layouts |
+| `server/developer-tests/*` | Approved developer rule/transaction tests only |
+
+## Task 1: Tooling, Shared Contracts, and Pure Domain Rules
+
+**Files:**
+
+- Create: `package.json`
+- Create: `tsconfig.json`
+- Create: `vite.config.ts`
+- Create: `vitest.config.ts`
+- Create: `eslint.config.js`
+- Create: `.gitignore`
+- Create: `.env.example`
+- Create: `index.html`
+- Create: `shared/domain.ts`
+- Create: `shared/api.ts`
+- Create: `server/domain/jobStatusRules.ts`
+- Create: `server/domain/pricingRules.ts`
+- Create: `server/domain/inventoryRules.ts`
+- Create: `server/domain/schedulingRules.ts`
+- Create: `server/developer-tests/jobStatusRules.test.ts`
+- Create: `server/developer-tests/pricingRules.test.ts`
+- Create: `server/developer-tests/inventoryRules.test.ts`
+- Create: `server/developer-tests/schedulingRules.test.ts`
+
+**Interfaces:**
+
+- Produces:
+
+```ts
+export type UserRole = 'admin' | 'technician';
+export type JobStatus =
+  | 'Pending'
+  | 'Assigned'
+  | 'In Progress'
+  | 'Completed'
+  | 'Cancelled';
+
+export interface AuthenticatedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  technicianId?: string;
+}
+
+export interface CustomerInput {
+  name: string;
+  phone: string;
+  address: string;
+  acBrand?: string;
+  btu: 9000 | 12000 | 18000 | 24000;
+  acType: AcType;
+  note?: string;
+}
+
+export interface CreateJobInput {
+  customerId: string;
+  serviceType: ServiceType;
+  preferredDate: string;
+  timeSlot: TimeSlot;
+  technicianId?: string;
+  numberOfUnits: number;
+  priority: JobPriority;
+  problemDescription?: string;
+}
+
+export interface JobFilters {
+  status?: JobStatus;
+  search?: string;
+  date?: string;
+  technicianId?: string;
+}
+
+export function canTransitionJobStatus(
+  currentStatus: JobStatus,
+  nextStatus: JobStatus,
+): boolean;
+
+export function getAllowedNextStatuses(status: JobStatus): JobStatus[];
+
+export interface InvoiceCalculation {
+  serviceFee: number;
+  urgentSurcharge: number;
+  partsCost: number;
+  subtotal: number;
+  vat: number;
+  total: number;
+}
+
+export function calculateInvoice(
+  job: Pick<Job, 'serviceType' | 'numberOfUnits' | 'priority' | 'usedParts'>,
+  inventoryItems: InventoryItem[],
+): InvoiceCalculation;
+
+export function assertAvailableStock(
+  usedParts: UsedPart[],
+  inventoryItems: InventoryItem[],
+): void;
+
+export function hasScheduleConflict(
+  candidate: Pick<Job, 'id' | 'technicianId' | 'preferredDate' | 'timeSlot'>,
+  jobs: Job[],
+): boolean;
+```
+
+- [ ] **Step 1: Create the npm and TypeScript configuration**
+
+Use scripts:
+
+```json
+{
+  "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\"",
+  "dev:web": "vite",
+  "dev:api": "tsx watch server/index.ts",
+  "db:migrate": "tsx server/db/migrate.ts",
+  "db:seed": "tsx server/db/seed.ts",
+  "db:reset": "tsx server/db/reset.ts",
+  "lint": "eslint .",
+  "typecheck": "tsc --noEmit",
+  "test:dev": "vitest run",
+  "build": "npm run typecheck && vite build"
+}
+```
+
+Install application dependencies `react`, `react-dom`, `react-router-dom`,
+`express`, `cors`, `pg`, and `zod`. Install development dependencies for
+TypeScript, Vite React, TSX, ESLint, Vitest, React/Express/CORS/PG types, and
+`concurrently`.
+
+- [ ] **Step 2: Define shared domain and envelope types**
+
+`shared/api.ts` must export:
+
+```ts
+export interface ApiSuccess<T> {
+  data: T;
+  message?: string;
+}
+
+export interface ApiFailure {
+  message: string;
+  code: string;
+  fieldErrors?: Record<string, string>;
+}
+```
+
+`shared/domain.ts` must contain every model and union from Section 8 without
+database-only password fields in API-safe user objects. It also exports
+`AuthenticatedUser`, `CustomerInput`, `CreateJobInput`, and `JobFilters` with the
+exact shapes in the Interfaces block above.
+
+- [ ] **Step 3: Write failing status-transition and schedule tests**
+
+Cover every cell of the state matrix and these schedule cases:
+
+```ts
+it('conflicts only for same technician, date, slot, and active status');
+it('does not conflict with the candidate job itself during reassignment');
+it('does not conflict with Completed or Cancelled jobs');
+```
+
+Run:
+
+```bash
+npm run test:dev -- server/developer-tests/jobStatusRules.test.ts server/developer-tests/schedulingRules.test.ts
+```
+
+Expected: fail because rule modules do not yet export the required functions.
+
+- [ ] **Step 4: Implement minimal transition and scheduling rules**
+
+Use a readonly transition map and treat only Assigned/In Progress jobs as
+conflict-producing. Re-run the two test files and expect all cases to pass.
+
+- [ ] **Step 5: Write failing pricing and inventory tests**
+
+Cover every pricing decision-table row, two-decimal rounding, low-stock equality,
+missing inventory items, duplicate used parts, non-positive quantity, and
+insufficient stock.
+
+Run:
+
+```bash
+npm run test:dev -- server/developer-tests/pricingRules.test.ts server/developer-tests/inventoryRules.test.ts
+```
+
+Expected: fail because pricing/inventory functions do not exist.
+
+- [ ] **Step 6: Implement minimal pricing and inventory rules**
+
+Use integer-safe two-decimal rounding:
+
+```ts
+export const roundMoney = (value: number): number =>
+  Math.round((value + Number.EPSILON) * 100) / 100;
+```
+
+Re-run all developer tests and expect them to pass.
+
+- [ ] **Step 7: Verify and commit**
+
+Run:
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:dev
+```
+
+Commit:
+
+```bash
+git add package.json package-lock.json tsconfig.json vite.config.ts vitest.config.ts eslint.config.js .gitignore .env.example index.html shared server/domain server/developer-tests
+git commit -m "feat: establish domain rules and project tooling"
+```
+
+## Task 2: PostgreSQL Schema, Migration, Seed, and Reset
+
+**Files:**
+
+- Create: `docker-compose.yml`
+- Create: `server/db/pool.ts`
+- Create: `server/db/migrate.ts`
+- Create: `server/db/seed.ts`
+- Create: `server/db/reset.ts`
+- Create: `server/db/transaction.ts`
+- Create: `server/db/migrations/001_initial_schema.sql`
+- Create: `server/config.ts`
+
+**Interfaces:**
+
+```ts
+export const pool: Pool;
+export async function withTransaction<T>(
+  work: (client: PoolClient) => Promise<T>,
+): Promise<T>;
+export async function migrateDatabase(): Promise<void>;
+export async function resetDatabase(): Promise<void>;
+export function bangkokDate(offsetDays: number): string;
+```
+
+- [ ] **Step 1: Add local PostgreSQL and validated configuration**
+
+Compose service name is `db`, host port is `5432`, database is
+`home_service_qa`, and credentials come from `.env`. `.env.example` contains only
+safe demo defaults. `server/config.ts` validates `DATABASE_URL`, `PORT`,
+`WEB_ORIGIN`, and `NODE_ENV`.
+
+- [ ] **Step 2: Write the complete initial schema migration**
+
+Create the seven tables in Section 8.7. Include:
+
+```sql
+CREATE UNIQUE INDEX jobs_active_technician_slot_unique
+ON jobs (technician_id, preferred_date, time_slot)
+WHERE technician_id IS NOT NULL
+  AND status IN ('Assigned', 'In Progress');
+
+ALTER TABLE invoices
+  ADD CONSTRAINT invoices_job_unique UNIQUE (job_id);
+```
+
+Use check constraints for enums, unit count `BETWEEN 1 AND 5`, non-negative
+stock/money, positive used-part quantity, and customer field lengths.
+
+- [ ] **Step 3: Implement migration and transaction helpers**
+
+`migrateDatabase` maintains a `schema_migrations` table and applies each migration
+once. `withTransaction` begins, commits, rolls back on error, and always releases
+the client.
+
+- [ ] **Step 4: Implement deterministic seed/reset**
+
+Insert every Section 8.8 record using relative Bangkok dates. Reset truncates
+application tables and inserts all seed records in one transaction. Seed
+passwords match the documented demo accounts.
+
+- [ ] **Step 5: Verify schema and seed manually**
+
+Run:
+
+```bash
+docker compose up -d db
+npm run db:migrate
+npm run db:reset
+docker compose exec -T db psql -U home_service -d home_service_qa -c "SELECT status, count(*) FROM jobs GROUP BY status ORDER BY status;"
+docker compose exec -T db psql -U home_service -d home_service_qa -c "SELECT id, stock <= safety_stock AS low_stock FROM inventory_items ORDER BY id;"
+```
+
+Expected job counts: Pending 1, Assigned 1, In Progress 1, Completed 2,
+Cancelled 1. Expected low-stock values: false, true, true, false.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add docker-compose.yml .env.example server/config.ts server/db
+git commit -m "feat: add deterministic PostgreSQL data lifecycle"
+```
+
+## Task 3: Express Foundation, Mock Authentication, and Authorization
+
+**Files:**
+
+- Create: `server/app.ts`
+- Create: `server/index.ts`
+- Create: `server/errors/AppError.ts`
+- Create: `server/middleware/errorHandler.ts`
+- Create: `server/middleware/authenticate.ts`
+- Create: `server/middleware/requireRole.ts`
+- Create: `server/middleware/requestLogger.ts`
+- Create: `server/features/auth/authService.ts`
+- Create: `server/features/auth/authRoutes.ts`
+- Create: `server/features/health/healthRoutes.ts`
+- Create: `server/features/test/testRoutes.ts`
+
+**Interfaces:**
+
+```ts
+export interface AuthenticatedUser {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  technicianId?: string;
+}
+
+export interface AuthenticatedRequest extends Request {
+  authUser?: AuthenticatedUser;
+}
+
+export function authenticate(
+  request: AuthenticatedRequest,
+  response: Response,
+  next: NextFunction,
+): void;
+
+export function requireRole(...roles: UserRole[]): RequestHandler;
+```
+
+- [ ] **Step 1: Compose the Express application**
+
+Enable CORS for `WEB_ORIGIN`, JSON parsing, redacted request logging, `/api/health`,
+feature routers, not-found handling, and the final error handler. `server/app.ts`
+must not listen on a port so later transaction tests can import it safely.
+
+- [ ] **Step 2: Implement mock login and bearer identity**
+
+Login validates required fields, compares seeded credentials, and returns stable
+role tokens from the approved login contract. `authenticate` resolves only those
+stable tokens to current seeded users; no JWT or production-security claim is
+added.
+
+- [ ] **Step 3: Implement role middleware and normalized errors**
+
+`AppError` carries `status`, `code`, `message`, and optional `fieldErrors`.
+Unknown errors return `500` with code `INTERNAL_ERROR` without leaking a stack
+outside development.
+
+- [ ] **Step 4: Implement health and reset endpoints**
+
+Health checks a database `SELECT 1`. Reset calls `resetDatabase()` only when
+`NODE_ENV` is `development` or `test`; otherwise it throws `RESET_DISABLED`.
+
+- [ ] **Step 5: Verify endpoints manually**
+
+Run API and use:
+
+```bash
+curl -i http://localhost:4000/api/health
+curl -i -X POST http://localhost:4000/api/auth/login -H 'Content-Type: application/json' -d '{"email":"admin@demo.com","password":"password123"}'
+curl -i -X POST http://localhost:4000/api/auth/login -H 'Content-Type: application/json' -d '{"email":"admin@demo.com","password":"wrong"}'
+curl -i -X POST http://localhost:4000/api/test/reset
+```
+
+Expected: `200`, `200`, `401 INVALID_CREDENTIALS`, and `200`.
+
+- [ ] **Step 6: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:dev
+git add server
+git commit -m "feat: add API foundation and mock authorization"
+```
+
+## Task 4: Customer and Dashboard APIs
+
+**Files:**
+
+- Create: `server/features/customers/customerSchemas.ts`
+- Create: `server/features/customers/customerRepository.ts`
+- Create: `server/features/customers/customerService.ts`
+- Create: `server/features/customers/customerRoutes.ts`
+- Create: `server/features/technicians/technicianRoutes.ts`
+- Create: `server/features/dashboard/dashboardRepository.ts`
+- Create: `server/features/dashboard/dashboardRoutes.ts`
+- Modify: `server/app.ts`
+
+**Interfaces:**
+
+```ts
+export interface CustomerInput {
+  name: string;
+  phone: string;
+  address: string;
+  acBrand?: string;
+  btu: 9000 | 12000 | 18000 | 24000;
+  acType: AcType;
+  note?: string;
+}
+
+export interface DashboardSummary {
+  totalJobsToday: number;
+  pendingJobs: number;
+  assignedJobs: number;
+  completedJobs: number;
+  unpaidInvoices: number;
+  lowStockItems: number;
+}
+```
+
+- [ ] **Step 1: Implement customer validation and repository queries**
+
+Use parameterized SQL only. Search is case-insensitive over name and partial over
+phone. Map snake_case rows to API camelCase at the repository boundary.
+
+- [ ] **Step 2: Implement customer routes**
+
+Add `GET /api/customers`, `GET /api/customers/:id`,
+`POST /api/customers`, and `PATCH /api/customers/:id`. Apply authentication and
+Admin role middleware before handlers.
+
+- [ ] **Step 3: Implement technician reference and dashboard routes**
+
+`GET /api/technicians` returns active technicians. Dashboard uses one
+parameterized aggregate query or one transactionally consistent set of queries
+and the low-stock `<=` boundary.
+
+- [ ] **Step 4: Verify with curl and SQL**
+
+Verify valid create returns `201`; a nine-digit phone returns
+`400 VALIDATION_ERROR`; unknown ID returns `404`; Technician token receives
+`403` for customer create; dashboard seed values match Section 11.1A.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:dev
+git add server/features server/app.ts
+git commit -m "feat: add customer and dashboard APIs"
+```
+
+## Task 5: Job Booking, Dispatch, Ownership, and Status APIs
+
+**Files:**
+
+- Create: `server/features/jobs/jobSchemas.ts`
+- Create: `server/features/jobs/jobRepository.ts`
+- Create: `server/features/jobs/jobService.ts`
+- Create: `server/features/jobs/jobRoutes.ts`
+- Modify: `server/app.ts`
+
+**Interfaces:**
+
+```ts
+export interface CreateJobInput {
+  customerId: string;
+  serviceType: ServiceType;
+  preferredDate: string;
+  timeSlot: TimeSlot;
+  technicianId?: string;
+  numberOfUnits: number;
+  priority: JobPriority;
+  problemDescription?: string;
+}
+
+export async function assignTechnician(
+  jobId: string,
+  technicianId: string,
+): Promise<Job>;
+
+export async function updateJobStatus(
+  jobId: string,
+  nextStatus: JobStatus,
+  actor: AuthenticatedUser,
+): Promise<{ job: Job; invoice?: Invoice }>;
+```
+
+- [ ] **Step 1: Implement job validation and list/detail queries**
+
+Reject invalid enums, a past Bangkok date, unit count outside 1–5, unknown
+customer/technician, and description over 500 characters. Admin list supports
+status, search, date, and technician filters. Technician list/detail is always
+scoped to the authenticated technician.
+
+- [ ] **Step 2: Implement create and assignment services**
+
+Creating without technician yields Pending; with technician yields Assigned.
+Assignment uses a transaction and database unique-index protection. Translate
+PostgreSQL unique violation to `TECHNICIAN_SCHEDULE_CONFLICT`.
+
+- [ ] **Step 3: Implement role-aware status updates**
+
+Admin may cancel Pending/Assigned. Technician may start or complete only an owned
+job. Reuse `canTransitionJobStatus`; reject every other transition.
+
+- [ ] **Step 4: Implement deterministic used-parts draft replacement**
+
+`PUT /api/jobs/:id/used-parts` validates the complete collection, job ownership,
+In Progress status, positive integer quantities, unique item IDs, known items,
+and current availability. Replace rows in one transaction without deducting
+stock.
+
+- [ ] **Step 5: Verify high-risk cases manually**
+
+Use curl plus SQL to verify Pending creation, Assigned creation, past date,
+units 0/6, conflict on assigning `job-001` to `tech-001`, technician ownership,
+Pending-to-Completed rejection, and Completed/Cancelled terminal behavior.
+
+- [ ] **Step 6: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run test:dev
+git add server/features/jobs server/app.ts
+git commit -m "feat: add job dispatch and status APIs"
+```
+
+## Task 6: Inventory, Invoice, and Atomic Completion APIs
+
+**Files:**
+
+- Create: `server/features/inventory/inventorySchemas.ts`
+- Create: `server/features/inventory/inventoryRepository.ts`
+- Create: `server/features/inventory/inventoryRoutes.ts`
+- Create: `server/features/invoices/invoiceRepository.ts`
+- Create: `server/features/invoices/invoiceService.ts`
+- Create: `server/features/invoices/invoiceRoutes.ts`
+- Create: `server/developer-tests/completeJob.test.ts`
+- Modify: `server/features/jobs/jobService.ts`
+- Modify: `server/app.ts`
+
+**Interfaces:**
+
+```ts
+export async function completeJob(
+  client: PoolClient,
+  jobId: string,
+  technicianId: string,
+): Promise<{ job: Job; invoice: Invoice }>;
+
+export async function payInvoice(
+  invoiceId: string,
+): Promise<Invoice>;
+```
+
+- [ ] **Step 1: Implement inventory list and adjustment**
+
+Return computed `lowStock`. Accept only `type: 'in' | 'out'` and a positive
+integer quantity. Perform adjustment in one SQL statement guarded against a
+negative result; translate zero updated rows to the correct business error.
+
+- [ ] **Step 2: Write the failing completion transaction tests**
+
+Against a reset test database, prove:
+
+```ts
+it('completes job, deducts each part once, and creates one invoice atomically');
+it('rolls back job, stock, and invoice when any part has insufficient stock');
+it('rejects a second completion without duplicating stock deduction or invoice');
+```
+
+Run:
+
+```bash
+npm run test:dev -- server/developer-tests/completeJob.test.ts
+```
+
+Expected: fail because `completeJob` is not implemented.
+
+- [ ] **Step 3: Implement transactional completion**
+
+Use `SELECT ... FOR UPDATE` for job and inventory rows, verify ownership/status,
+calculate invoice through the pure domain function, deduct stock, update job,
+and insert invoice before commit. A retry of an already Completed job returns
+`INVALID_STATUS_TRANSITION`; its existing stock and invoice remain unchanged.
+
+- [ ] **Step 4: Re-run completion tests**
+
+Expected: all atomicity, rollback, and idempotency cases pass.
+
+- [ ] **Step 5: Implement invoice list/detail/generate/pay routes**
+
+Admin list supports status filtering. Generate returns `201` for a new invoice
+and `200` for an existing invoice. Pay uses a row lock, rejects a second payment,
+sets `paid_at`, and creates a unique `RCP-YYYYMMDD-NNNN` receipt.
+
+- [ ] **Step 6: Verify and commit**
+
+Run full developer tests, lint, type-check, and manual curl/SQL checks for stock
+boundary, VAT, payment, and duplicate payment.
+
+```bash
+git add server/features server/developer-tests server/app.ts
+git commit -m "feat: add transactional inventory and invoicing"
+```
+
+## Task 7: Frontend Foundation, Authentication, and Role-Aware Layout
+
+**Files:**
+
+- Create: `src/main.tsx`
+- Create: `src/App.tsx`
+- Create: `src/api/client.ts`
+- Create: `src/auth/AuthContext.tsx`
+- Create: `src/auth/ProtectedRoute.tsx`
+- Create: `src/auth/RoleGuard.tsx`
+- Create: `src/components/AppLayout.tsx`
+- Create: `src/components/Sidebar.tsx`
+- Create: `src/components/PageHeader.tsx`
+- Create: `src/components/StatusBadge.tsx`
+- Create: `src/components/FeedbackBanner.tsx`
+- Create: `src/components/ConfirmDialog.tsx`
+- Create: `src/features/auth/LoginPage.tsx`
+- Create: `src/features/system/NotFoundPage.tsx`
+- Create: `src/styles/tokens.css`
+- Create: `src/styles/base.css`
+- Create: `src/styles/components.css`
+- Create: `src/styles/pages.css`
+
+**Interfaces:**
+
+```ts
+export interface AuthContextValue {
+  user: AuthenticatedUser | null;
+  token: string | null;
+  login(email: string, password: string): Promise<AuthenticatedUser>;
+  logout(): void;
+}
+
+export async function apiRequest<T>(
+  path: string,
+  options?: RequestInit,
+): Promise<T>;
+```
+
+- [ ] **Step 1: Build the API client and session context**
+
+The client reads `VITE_API_BASE_URL`, injects the bearer token, unwraps success
+envelopes, and throws a typed `ApiClientError`. Auth stores token/user in
+`localStorage` under versioned keys and clears invalid sessions.
+
+- [ ] **Step 2: Build login and guards**
+
+Add every Section 12.1 test ID. Empty fields show field-level validation. Role
+guards redirect Admin to `/admin/dashboard`, Technician to `/tech/jobs`, and
+unauthenticated users to `/login`.
+
+- [ ] **Step 3: Build the desktop-first layout**
+
+Use a restrained blue/teal field-service palette, persistent desktop sidebar,
+tablet-collapsible navigation, visible current user/role, logout, accessible
+focus styles, status badges, feedback banners, and confirmation dialog.
+
+- [ ] **Step 4: Add route stubs using real layout components**
+
+Register every route in Section 10. Each route stub states its page name only;
+it must not simulate completed behavior.
+
+- [ ] **Step 5: Verify manually**
+
+Run web/API, verify Admin and Technician redirects, invalid login error, logout,
+direct URL role protection, keyboard focus, and 1024px layout.
+
+- [ ] **Step 6: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+git add src index.html
+git commit -m "feat: add authenticated role-aware application shell"
+```
+
+## Task 8: Admin Dashboard and Customer UI
+
+**Files:**
+
+- Create: `src/features/dashboard/dashboardApi.ts`
+- Create: `src/features/dashboard/AdminDashboardPage.tsx`
+- Create: `src/features/customers/customerApi.ts`
+- Create: `src/features/customers/CustomerListPage.tsx`
+- Create: `src/features/customers/CustomerDetailPage.tsx`
+- Create: `src/features/customers/CustomerFormPage.tsx`
+- Modify: `src/App.tsx`
+- Modify: `src/styles/pages.css`
+
+**Interfaces:**
+
+```ts
+export const customerApi: {
+  list(search?: string): Promise<Customer[]>;
+  get(id: string): Promise<Customer>;
+  create(input: CustomerInput): Promise<Customer>;
+  update(id: string, input: CustomerInput): Promise<Customer>;
+};
+```
+
+- [ ] **Step 1: Implement dashboard cards**
+
+Render all six required cards and test IDs. Provide loading, empty-safe,
+unauthorized, and retryable error states.
+
+- [ ] **Step 2: Implement customer list/detail**
+
+Search submits on debounce or explicit submit without racing stale responses.
+Rows link to details; detail links to edit. Render all documented test IDs.
+
+- [ ] **Step 3: Implement shared create/edit customer form**
+
+Client validation mirrors field rules for usability, sends canonical values,
+maps `fieldErrors` back to controls, focuses the first error, and navigates to
+detail after success.
+
+- [ ] **Step 4: Verify manually**
+
+Walk through valid create/edit, required fields, 9/10/11-digit phone boundaries,
+name boundaries, BTU/type choices, search by name/phone, and API failure banner.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+git add src/features/dashboard src/features/customers src/App.tsx src/styles/pages.css
+git commit -m "feat: add dashboard and customer management UI"
+```
+
+## Task 9: Admin Job Booking, Detail, and Dispatch UI
+
+**Files:**
+
+- Create: `src/features/jobs/jobApi.ts`
+- Create: `src/features/jobs/JobListPage.tsx`
+- Create: `src/features/jobs/JobFormPage.tsx`
+- Create: `src/features/jobs/JobDetailPage.tsx`
+- Create: `src/features/dispatch/DispatchPage.tsx`
+- Modify: `src/App.tsx`
+- Modify: `src/styles/pages.css`
+
+**Interfaces:**
+
+```ts
+export const jobApi: {
+  list(filters: JobFilters): Promise<Job[]>;
+  get(id: string): Promise<Job>;
+  create(input: CreateJobInput): Promise<Job>;
+  assign(jobId: string, technicianId: string): Promise<Job>;
+  updateStatus(jobId: string, nextStatus: JobStatus): Promise<Job>;
+};
+```
+
+- [ ] **Step 1: Implement job list and form**
+
+Render status/search filters and all required test IDs. Date input minimum is
+today in Bangkok. Technician is optional. Client validation covers required
+fields, date, units 1–5, and description length.
+
+- [ ] **Step 2: Implement job detail and cancellation**
+
+Display customer, technician, status, appointment, problem, and invoice link.
+Only Pending/Assigned show Cancel with confirmation. Pending shows assignment.
+
+- [ ] **Step 3: Implement dispatch**
+
+Date filters eligible Pending/Assigned jobs; selecting a job supplies its fixed
+time slot. The UI chooses technician and submits assignment/reassignment. Show
+conflict messages from the API and refresh the assignment table.
+
+- [ ] **Step 4: Verify manually**
+
+Walk through Pending and Assigned creation, past date, 0/6 units, search/filter,
+job detail, assignment, conflict using seed jobs, reassignment, and cancellation.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+git add src/features/jobs src/features/dispatch src/App.tsx src/styles/pages.css
+git commit -m "feat: add job booking and dispatch UI"
+```
+
+## Task 10: Technician Workflow UI
+
+**Files:**
+
+- Create: `src/features/technician/technicianApi.ts`
+- Create: `src/features/technician/TechnicianJobListPage.tsx`
+- Create: `src/features/technician/TechnicianJobDetailPage.tsx`
+- Modify: `src/App.tsx`
+- Modify: `src/styles/pages.css`
+
+**Interfaces:**
+
+```ts
+export const technicianApi: {
+  listJobs(): Promise<Job[]>;
+  getJob(id: string): Promise<Job>;
+  startJob(id: string): Promise<Job>;
+  replaceUsedParts(id: string, usedParts: UsedPart[]): Promise<Job>;
+  completeJob(id: string): Promise<{ job: Job; invoice: Invoice }>;
+};
+```
+
+- [ ] **Step 1: Implement owned job list/detail**
+
+Render the Section 12.9/12.10 test IDs, customer/contact details, appointment,
+status, used-parts draft, and only actions valid for the current state.
+
+- [ ] **Step 2: Implement start and used-parts editing**
+
+Starting requires confirmation. Used-parts controls support adding, changing,
+and removing unique items locally before replacing the server draft. Show stock
+availability without deducting it.
+
+- [ ] **Step 3: Implement completion**
+
+Completion requires confirmation, disables during request, renders insufficient
+stock without losing the draft, and displays returned invoice summary on success.
+
+- [ ] **Step 4: Verify manually**
+
+Verify owned-only visibility, direct URL denial for another technician's job,
+start, used-part validation, completion, insufficient-stock rollback, and no
+actions on Cancelled/Completed jobs.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+git add src/features/technician src/App.tsx src/styles/pages.css
+git commit -m "feat: add technician service workflow UI"
+```
+
+## Task 11: Inventory and Invoice UI
+
+**Files:**
+
+- Create: `src/features/inventory/inventoryApi.ts`
+- Create: `src/features/inventory/InventoryPage.tsx`
+- Create: `src/features/invoices/invoiceApi.ts`
+- Create: `src/features/invoices/InvoiceListPage.tsx`
+- Create: `src/features/invoices/InvoiceDetailPage.tsx`
+- Modify: `src/App.tsx`
+- Modify: `src/features/jobs/JobDetailPage.tsx`
+- Modify: `src/styles/pages.css`
+
+- [ ] **Step 1: Implement inventory table and adjustment form**
+
+Render every required test ID, low-stock at equality, item selection, in/out,
+positive integer quantity, success feedback, and negative-stock errors.
+
+- [ ] **Step 2: Implement invoice list/detail/payment**
+
+List supports status filtering. Detail renders each price component with
+two-decimal THB formatting. Unpaid shows a confirmed Mark as Paid action; Paid
+shows receipt and paid timestamp without an active payment button.
+
+- [ ] **Step 3: Connect invoice links and dashboard refresh behavior**
+
+Completed job detail links to its invoice. Navigating back to dashboard fetches
+fresh values rather than relying on cached counts.
+
+- [ ] **Step 4: Verify manually**
+
+Verify stock in/out, zero/negative/overdraw input, both low-stock boundaries,
+invoice calculations against decision table, payment, duplicate payment through
+API, receipt, filters, job link, and dashboard counts.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+npm run lint
+npm run typecheck
+npm run build
+git add src/features/inventory src/features/invoices src/features/jobs/JobDetailPage.tsx src/App.tsx src/styles/pages.css
+git commit -m "feat: add inventory and invoice administration UI"
+```
+
+## Task 12: QA Handoff, Full Verification, and Documentation
+
+**Files:**
+
+- Create: `README.md`
+- Modify: `IMPLEMENTATION_PLAN.md`
+- Modify: `.env.example`
+
+- [ ] **Step 1: Write exact local setup instructions**
+
+README covers prerequisites, environment copy, Docker database start, install,
+migrate/reset, dev start, demo accounts, developer verification commands,
+architecture, feature list, limitations, and the approved AI-assistance
+disclosure. It does not provide QA automation setup instructions.
+
+- [ ] **Step 2: Verify a clean setup path**
+
+From the documented commands, confirm PostgreSQL starts, migration/reset works,
+API health is ready, and web login renders. Do not rely on uncommitted local
+environment values.
+
+- [ ] **Step 3: Run the full verification gate**
+
+```bash
+npm run db:reset
+npm run lint
+npm run typecheck
+npm run test:dev
+npm run build
+```
+
+Expected: every command exits `0`, with no failed tests or TypeScript/ESLint
+errors.
+
+- [ ] **Step 4: Perform the core workflow walkthrough**
+
+Verify:
+
+```text
+Admin login
+-> create customer
+-> create Pending job
+-> assign technician
+-> Technician login
+-> start job
+-> add used part
+-> complete job
+-> Admin login
+-> verify stock and invoice
+-> mark invoice Paid
+-> verify receipt and dashboard
+```
+
+Also verify invalid credentials, role denial, conflict, invalid status,
+insufficient stock rollback, low-stock equality, duplicate invoice, and duplicate
+payment.
+
+- [ ] **Step 5: Reconcile documentation with delivered behavior**
+
+Check every Must requirement in the Functional Requirement Catalogue against a
+route, API, schema constraint, developer test, or walkthrough result. Update only
+actual delivered commands/behavior and record any remaining gap explicitly.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add README.md IMPLEMENTATION_PLAN.md .env.example
+git commit -m "docs: complete SUT setup and QA handoff"
+```

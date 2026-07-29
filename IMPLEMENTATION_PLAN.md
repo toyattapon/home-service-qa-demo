@@ -242,6 +242,54 @@ The project does not support credible claims about:
 Load-test results are educational and environment-specific. They must not be
 presented as production capacity results.
 
+### Portfolio Core Delivery Record
+
+Implementation completed and verified locally on 2026-07-30 on branch
+`feature/portfolio-core`.
+
+Delivered behavior was checked against the Must requirements through API
+walkthroughs, browser walkthroughs, PostgreSQL-backed developer tests, schema
+constraints, and production build verification. The final deterministic seed
+dashboard baseline is:
+
+```text
+Jobs today: 0
+Pending jobs: 1
+Assigned jobs: 1
+Completed jobs: 2
+Unpaid invoices: 1
+Low-stock items: 2
+```
+
+The `Jobs today` value is intentionally `0`: conflict-ready Pending, Assigned,
+and In Progress jobs are scheduled for tomorrow so they remain valid immediately
+after reset.
+
+Final verification evidence:
+
+```text
+npm run db:reset    -> passed
+npm run lint        -> passed with no errors or warnings
+npm run typecheck   -> passed
+npm run test:dev    -> 5 files, 47 tests passed
+npm run build       -> passed
+```
+
+The browser walkthrough verified Admin and Technician authentication, protected
+routes, owned-job access, dispatch success and conflict behavior, start job,
+used parts, transactional completion, stock deduction, invoice calculation,
+payment, receipt generation, and a 390 px viewport without page-level horizontal
+overflow. The database was reset again after the state-changing walkthrough.
+
+Remaining learner-owned work is unchanged: QA test documents, Playwright/API
+automation, SQL test scripts, load-test scripts, CI/CD, and optional hosting.
+
+Dependency review note: `npm audit --omit=dev` currently reports the upstream
+React Router RSC-mode advisory `GHSA-qwww-vcr4-c8h2`. This SUT uses the
+client-only `BrowserRouter` and does not use React Server Components, actions, or
+server-side rendering. No released stable React Router version is currently
+outside all reported advisory ranges; recheck before any future hosted delivery.
+
 ### QA Handoff Package
 
 Before handing the SUT to QA, development must provide:
